@@ -1,51 +1,106 @@
-import React, { createContext, useState, useEffect,type ReactNode } from "react";
+"use client"
 
-type User = {
-  email: string;
-  // add other user fields here as needed
-};
+import type React from "react"
+import { createContext, useContext, useEffect, useState } from "react"
+import type { User } from "../types"
+import { apiRequest } from "../utils/api"
+import { API_ENDPOINTS } from "../config/api"
 
-type AuthContextType = {
-  user: User | null;
-  token: string | null;
-  login: (accessToken: string, user: User) => void;
-  logout: () => void;
-};
+interface AuthContextType {
+  user: User | null
+  login: (email: string, password: string) => Promise<void>
+  register: (userData: FormData) => Promise<void>
+  logout: () => Promise<void>
+  loading: boolean
+  isAuthenticated: boolean
+}
 
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+export const useAuth = () => {
+  const context = useContext(AuthContext)
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider")
+  }
+  return context
+}
 
-  // On mount, check localStorage for saved token and user info
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+
   useEffect(() => {
-    const savedAccessToken = localStorage.getItem("accessToken");
-    const savedUser = localStorage.getItem("user");
+    checkAuthStatus()
+  }, [])
 
-    if (savedAccessToken && savedUser) {
-      setToken(savedAccessToken);
-      setUser(JSON.parse(savedUser));
+  const checkAuthStatus = async () => {
+    try {
+      const token = localStorage.getItem("accessToken")
+      if (token) {
+        // You might want to verify the token with the backend
+        // For now, we'll assume it's valid if it exists
+        setLoading(false)
+      } else {
+        setLoading(false)
+      }
+    } catch (error) {
+      console.error("Auth check failed:", error)
+      setLoading(false)
     }
-  }, []);
+  }
 
-  const login = (accessToken: string, user: User) => {
-    setToken(token);
-    setUser(user);
-    localStorage.setItem("accessToken", accessToken);
-    localStorage.setItem("user", JSON.stringify(user));
-  };
+  const login = async (email: string, password: string) => {
+    try {
+      const response = await apiRequest<{ user: User; accessToken: string; refreshToken: string }>(
+        "POST",
+        API_ENDPOINTS.LOGIN,
+        { email, password },
+      )
 
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-  };
+      const { user: userData, accessToken } = response.data
+      localStorage.setItem("accessToken", accessToken)
+      setUser(userData)
+    } catch (error) {
+      throw error
+    }
+  }
 
-  return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
+  const register = async (userData: FormData) => {
+    try {
+      const response = await apiRequest<User>("POST", API_ENDPOINTS.REGISTER, userData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+
+      // After registration, you might want to auto-login
+      // For now, we'll just return success
+    } catch (error) {
+      throw error
+    }
+  }
+
+  const logout = async () => {
+    try {
+      await apiRequest("POST", API_ENDPOINTS.LOGOUT)
+      localStorage.removeItem("accessToken")
+      setUser(null)
+    } catch (error) {
+      console.error("Logout failed:", error)
+      // Even if logout fails, clear local state
+      localStorage.removeItem("accessToken")
+      setUser(null)
+    }
+  }
+
+  const value = {
+    user,
+    login,
+    register,
+    logout,
+    loading,
+    isAuthenticated: !!user,
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}

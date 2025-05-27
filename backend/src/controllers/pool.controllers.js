@@ -69,32 +69,31 @@ const createPool = asyncHandler(async (req, res) => {
     if (conflictingPool) {
         throw new ApiError(400, "There is already a pool at the same location during this time. Please choose another time or location.");
     }
+// In your createPool function, replace the coverImage handling with:
+let coverImageUrl = null;
+if (req.file) {
+    const coverUpload = await uploadOnCloudinary(req.file.path);
+    if (!coverUpload) {
+        throw new ApiError(500, "Failed to upload cover image to Cloudinary");
+    }
+    coverImageUrl = coverUpload.secure_url;
+} else if (req.body.coverImage) {
+    // If coverImage URL is provided directly
+    coverImageUrl = req.body.coverImage;
+}
 
-    let coverImageLocalPath = req.files?.coverImage?.[0]?.path;
-    
-        if (!coverImageLocalPath) {
-            throw new ApiError(400, "Cover image is required");
-        }
-    
-    const coverUpload = coverImageLocalPath ? await uploadOnCloudinary(coverImageLocalPath) : null;
-    
-        if (!coverUpload) {
-            throw new ApiError(500, "Failed to upload avatar to Cloudinary");
-        }
-
-    // Create the pool if all checks pass
-    const pool = await Pool.create({
-        name,
-        description,
-        location,
-        date,
-        maxMembers,
-        creator: req.user._id, // From verifyJWT middleware
-        members: [req.user._id], // Add creator as first member
-        tags,
-        coverImage : coverUpload.url
-    });
-
+// Then in your Pool.create():
+const pool = await Pool.create({
+    name,
+    description,
+    location,
+    date,
+    maxMembers,
+    creator: req.user._id,
+    members: [req.user._id],
+    tags,
+    coverImage: coverImageUrl
+});
     if (!pool) {
         throw new ApiError(400, "Pool did not get created");
     }
